@@ -7,6 +7,8 @@ import matplotlib.patches as patches
 from ultralytics import YOLO
 import cv2
 import os
+import time
+
 
 
 # 모델 초기화
@@ -25,6 +27,9 @@ if not cap.isOpened():
 output_path = './output_paul.mp4'
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
 out = cv2.VideoWriter(output_path, fourcc, 20.0, (int(cap.get(3)), int(cap.get(4))))
+
+total_frames = 0
+start_time = time.time()  # 처리 시작 시간
 
 while True:
     ret, frame = cap.read()
@@ -60,10 +65,18 @@ while True:
 
     # 프레임을 동영상 파일에 쓰기
     out.write(frame)
+    total_frames += 1
 
 # 모든 자원 해제
 cap.release()
 out.release()
-cv2.destroyAllWindows()
+# cv2.destroyAllWindows()
 
-print("Video processing completed. Output saved to:", output_path)
+end_time = time.time()  # 처리 종료 시간
+total_time = end_time - start_time  # 총 소요 시간
+fps = total_frames / total_time  # 실제 FPS 계산
+
+print(f"Video processing completed. Output saved to: {output_path}")
+print(f"Total frames processed: {total_frames}")
+print(f"Total processing time: {total_time:.2f} seconds")
+print(f"Calculated FPS: {fps:.2f}")
