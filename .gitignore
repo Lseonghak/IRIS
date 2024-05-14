@@ -124,7 +124,7 @@ venv.bak/
 
 # Rope project settings
 .ropeproject
-
+checkpoints/
 # mkdocs documentation
 /site
 mkdocs_github_authors.yaml
