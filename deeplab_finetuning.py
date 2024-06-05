@@ -59,32 +59,26 @@ images_dir = 'sidewalk_unet/images'
 masks_dir = 'sidewalk_unet/masks'
 full_dataset = CrackDataset(images_dir, masks_dir, transform=None)
 
-# 데이터셋을 80% 학습용, 20% 검증용으로 분할
 train_size = int(0.8 * len(full_dataset))
 val_size = len(full_dataset) - train_size
 train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
 
-# 각 데이터셋에 대해 transform 적용
 train_dataset.dataset.transform = train_transform
 val_dataset.dataset.transform = val_transform
 
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True) 
 val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False) 
 
-# 모델 설정
 num_classes = 2
 model = deeplabv3_resnet50(pretrained=True)
 model.classifier[4] = torch.nn.Conv2d(256, num_classes, kernel_size=(1, 1)) 
 
-# 손실 함수 및 옵티마이저 설정
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-# 디바이스 설정
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = model.to(device)
 
-# 학습 루프
 num_epochs = 10
 scaler = torch.cuda.amp.GradScaler()  # Mixed Precision Training
 
@@ -107,7 +101,6 @@ for epoch in range(num_epochs):
 
     print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader)}")
 
-    # 검증 루프
     model.eval()
     val_loss = 0.0
     with torch.no_grad():
@@ -122,10 +115,8 @@ for epoch in range(num_epochs):
 
     print(f"Validation Loss: {val_loss/len(val_loader)}")
 
-# 모델 저장
 torch.save(model.state_dict(), './checkpoints/deeplabv3_finetuned.pth')
 
-# 예측 결과 저장 함수
 def save_predictions(images, masks, outputs, output_dir='predictions'):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -146,7 +137,6 @@ def save_predictions(images, masks, outputs, output_dir='predictions'):
         plt.savefig(os.path.join(output_dir, f'prediction_{i}.png'))
         plt.close(fig)
 
-# 예측 결과 저장
 model.eval()
 images, masks = next(iter(val_loader))
 images, masks = images.to(device), masks.to(device)
