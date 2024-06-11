@@ -61,20 +61,3 @@ This project processes stereo image pairs to compute disparity and depth maps, a
 
 4. The output images with disparity maps, depth maps, and deflection analysis will be saved in the `./output` directory.
 
-## Example
-
-Project directory structure:
-'''
-stereoParams.json
-data/
-    left_images/
-        1.jpg
-        1.json
-        2.jpg
-            2.json
-    right_images/
-        1.jpg
-        1.json
-        2.jpg
-        2.json
-'''
