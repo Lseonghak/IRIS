@@ -4,10 +4,6 @@ import numpy as np
 import os
 import math
 
-def load_stereo_params(file_path):
-    with open(file_path, 'r') as f:
-        return json.load(f)
-
 def get_camera_params(stereo_params):
     camera_params1 = stereo_params['CameraParameters1']
     camera_params2 = stereo_params['CameraParameters2']
@@ -34,32 +30,16 @@ def load_images(left_img_path, right_img_path):
     imgR = cv2.imread(right_img_path)
     return imgL, imgR
 
-def load_json(json_path):
-    with open(json_path, 'r') as f:
-        return json.load(f)
-
 def stereo_rectification(camera_matrix1, dist_coeffs1, camera_matrix2, dist_coeffs2, img_shape, R, T):
     R1, R2, P1, P2, Q, _, _ = cv2.stereoRectify(camera_matrix1, dist_coeffs1, camera_matrix2, dist_coeffs2, img_shape, R, T)
     return R1, R2, P1, P2
 
 def compute_disparity(rectified_imgL, rectified_imgR):
     num_disparities = 16 * 10
-    block_size = 15
+    block_size = 7
     stereo = cv2.StereoBM_create(numDisparities=num_disparities, blockSize=block_size)
     disparity = stereo.compute(cv2.cvtColor(rectified_imgL, cv2.COLOR_BGR2GRAY), cv2.cvtColor(rectified_imgR, cv2.COLOR_BGR2GRAY)).astype(np.float32) / 16.0
     return disparity
-
-def save_image(path, image):
-    cv2.imwrite(path, image)
-
-def normalize_image(image):
-    return cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-
-def calculate_depth_map(disparity, focal_length, baseline):
-    return (focal_length * baseline) / (disparity + 0.1)
-
-def extract_mask_points(json_data):
-    return np.array(json_data['shapes'][0]['points'], dtype=np.int32)
 
 def create_mask(image_shape, points):
     mask = np.zeros(image_shape, dtype=np.uint8)
@@ -146,15 +126,17 @@ def annotate_image(overlay, leftmost, rightmost, min_y_at_max_diff, max_y_at_max
         cv2.line(overlay, min_y_at_max_diff, max_y_at_max_diff, (255, 255, 0), 2)
     return overlay
 
-def process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, rotation_matrix, translation_vector):
+def process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, R, T):
     imgL, imgR = load_images(left_img_path, right_img_path)
     jsonL_path = left_img_path.replace('.jpg', '.json')
     jsonR_path = right_img_path.replace('.jpg', '.json')
 
-    dataL = load_json(jsonL_path)
-    dataR = load_json(jsonR_path)
+    with open(jsonL_path, 'r') as f:
+        dataL = json.load(f)
+    with open(jsonR_path, 'r') as f:
+        dataR = json.load(f)
 
-    R1, R2, P1, P2 = stereo_rectification(intrinsic_matrix1, dist_coeffs1, intrinsic_matrix2, dist_coeffs2, imgL.shape[:2], rotation_matrix, translation_vector)
+    R1, R2, P1, P2 = stereo_rectification(intrinsic_matrix1, dist_coeffs1, intrinsic_matrix2, dist_coeffs2, imgL.shape[:2], R, T)
 
     map1L, map2L = cv2.initUndistortRectifyMap(intrinsic_matrix1, dist_coeffs1, R1, P1, imgL.shape[:2], cv2.CV_16SC2)
     map1R, map2R = cv2.initUndistortRectifyMap(intrinsic_matrix2, dist_coeffs2, R2, P2, imgR.shape[:2], cv2.CV_16SC2)
@@ -163,22 +145,23 @@ def process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1
     rectified_imgR = cv2.remap(imgR, map1R, map2R, cv2.INTER_LINEAR)
 
     disparity = compute_disparity(rectified_imgL, rectified_imgR)
-
-    disparity_normalized = normalize_image(disparity)
-    save_image(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_disparity_map.jpg')), disparity_normalized)
+    
+    disparity_img = compute_disparity(imgL, imgR)
+    disparity_normalized = cv2.normalize(disparity_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    cv2.imwrite(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_disparity.jpg')), disparity_normalized)
 
     focal_length = P1[0, 0]
-    baseline = np.linalg.norm(translation_vector)
-    depth_map = calculate_depth_map(disparity, focal_length, baseline)
+    baseline = np.linalg.norm(T)
+    depth_map = (focal_length * baseline) / (disparity + 1e-5)
 
-    depth_map_normalized = normalize_image(depth_map)
-    save_image(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_depth_map.jpg')), depth_map_normalized)
+    depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    cv2.imwrite(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_depth.jpg')), depth_map_normalized)
 
-    pointsL = extract_mask_points(dataL)
+    pointsL = np.array(dataL['shapes'][0]['points'], dtype=np.int32)
     grayL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
     maskL = create_mask(grayL.shape, pointsL)
 
-    pointsR = extract_mask_points(dataR)
+    pointsR = np.array(dataR['shapes'][0]['points'], dtype=np.int32)
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
     maskR = create_mask(grayR.shape, pointsR)
 
@@ -200,13 +183,15 @@ def process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1
     angle = calculate_angle(dx, slope)
     overlay = annotate_image(overlay, leftmost, rightmost, min_y_at_max_diff, max_y_at_max_diff, height_deflection_mm, width_deflection_mm)
 
-    save_image(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_deflection.jpg')), overlay)
+    cv2.imwrite(os.path.join(output_path, os.path.basename(left_img_path).replace('.jpg', '_deflection.jpg')), overlay)
     print(f"Deflection analysis results saved to {output_path}")
     print(f"Angle between the lines: {angle:.2f} degrees")
 
 def main():
-    stereo_params = load_stereo_params('./stereoParams.json')
-    intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, rotation_matrix, translation_vector = get_camera_params(stereo_params)
+    
+    with open('./stereoParams.json', 'r') as f:
+        stereo_params =  json.load(f)
+    intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, R, T = get_camera_params(stereo_params)
 
     data_path = './data'
     left_images_path = os.path.join(data_path, 'left_images')
@@ -223,7 +208,7 @@ def main():
     for left_image, right_image in zip(left_images, right_images):
         left_img_path = os.path.join(left_images_path, left_image)
         right_img_path = os.path.join(right_images_path, right_image)
-        process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, rotation_matrix, translation_vector)
+        process_images(left_img_path, right_img_path, output_path, intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, R, T)
 
 if __name__ == "__main__":
     main()
