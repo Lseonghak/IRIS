@@ -193,7 +193,7 @@ def main():
         stereo_params =  json.load(f)
     intrinsic_matrix1, intrinsic_matrix2, dist_coeffs1, dist_coeffs2, R, T = get_camera_params(stereo_params)
 
-    data_path = './data'
+    data_path = './data2'
     left_images_path = os.path.join(data_path, 'left_images')
     right_images_path = os.path.join(data_path, 'right_images')
     output_path = './output'
